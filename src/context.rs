@@ -6,15 +6,15 @@ use tokio::sync::broadcast;
 
 pub enum Context {
     Base,
-    ValueContext(Arc<Mutex<Context>>, HashMap<&'static str, &'static Box<dyn Any + 'static>>),
+    ValueContext(Arc<Mutex<Context>>, HashMap<&'static str, &'static Box<dyn Any + 'static + Send + Sync>>),
     CancelContext(Arc<Mutex<Context>>, broadcast::Sender<()>, bool),
 }
 
-pub fn background() -> Arc<Mutex<Context>> {
+pub fn background_ctx() -> Arc<Mutex<Context>> {
     Arc::new(Mutex::new(Context::Base))
 }
 
-pub fn with_value(ctx: Arc<Mutex<Context>>, values: &'static [(&str, Box<dyn Any>)]) -> Arc<Mutex<Context>> {
+pub fn with_value(ctx: Arc<Mutex<Context>>, values: &'static [(&str, Box<dyn Any + Send + Sync>)]) -> Arc<Mutex<Context>> {
     let mut map = HashMap::new();
     for (k, v) in values {
         map.insert(*k, v);
@@ -28,7 +28,20 @@ pub fn with_cancel(ctx: Arc<Mutex<Context>>) -> Arc<Mutex<Context>> {
     Arc::new(Mutex::new(Context::CancelContext(ctx, tx, false)))
 }
 
-pub fn value_of(ctx: Arc<Mutex<Context>>, key: &'static str) -> Option<&'static Box<dyn Any + 'static>> {
+pub fn with_timeout(ctx: Arc<Mutex<Context>>, timeout: u64) -> Arc<Mutex<Context>> {
+    let (tx, _) = broadcast::channel(1);
+    let ctx = Arc::new(Mutex::new(Context::CancelContext(ctx, tx, false)));
+
+    let ctx_clone = ctx.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(tokio::time::Duration::from_secs(timeout)).await;
+        cancel_ctx(ctx_clone);
+    });
+
+    ctx
+}
+
+pub fn value_of(ctx: Arc<Mutex<Context>>, key: &'static str) -> Option<&'static Box<dyn Any + 'static + Send + Sync>> {
     match &*ctx.lock().unwrap() {
         Context::Base => None,
         Context::ValueContext(ctx, map) => {
