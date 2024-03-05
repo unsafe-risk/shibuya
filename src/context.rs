@@ -28,17 +28,17 @@ pub fn with_cancel(ctx: Arc<Mutex<Context>>) -> Arc<Mutex<Context>> {
     Arc::new(Mutex::new(Context::CancelContext(ctx, tx, false)))
 }
 
-pub fn value(ctx: Arc<Mutex<Context>>, key: &'static str) -> Option<&'static Box<dyn Any + 'static>> {
+pub fn value_of(ctx: Arc<Mutex<Context>>, key: &'static str) -> Option<&'static Box<dyn Any + 'static>> {
     match &*ctx.lock().unwrap() {
         Context::Base => None,
         Context::ValueContext(ctx, map) => {
             match map.get(key) {
                 Some(v) => Some(v),
-                None => value(ctx.clone(), key),
+                None => value_of(ctx.clone(), key),
             }
         },
         Context::CancelContext(ctx, _, _) => {
-            value(ctx.clone(), key)
+            value_of(ctx.clone(), key)
         },
     }
 }
@@ -79,14 +79,16 @@ pub fn is_cancelled(ctx: Arc<Mutex<Context>>) -> bool {
     }
 }
 
-pub fn after(ctx: Arc<Mutex<Context>>, fun: Arc<Mutex<dyn Fn() + Send + Sync>>) -> Result<(), &'static str> {
+pub fn after_ctx(ctx: Arc<Mutex<Context>>, funs: Vec<Box<dyn Fn() + Send + Sync>>) -> Result<(), &'static str> {
     let rx = done_of(ctx.clone());
 
     match rx {
         Some(mut rx) => {
             tokio::spawn(async move {
                 rx.recv().await.unwrap();
-                fun.as_ref().lock().unwrap()();
+                for f in funs {
+                    f();
+                }
             });
             Ok(())
         },
