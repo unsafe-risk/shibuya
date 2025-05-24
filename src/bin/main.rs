@@ -1,22 +1,28 @@
-use std::vec;
-
-use shibuya::context::{after_ctx, background, cancel_ctx, with_cancel};
+use shibuya::context::{after_func, background, with_cancel, with_value, ContextExt};
 
 #[tokio::main]
 async fn main() {
     let ctx = background();
-    let ctx = with_cancel(ctx);
-    match after_ctx(ctx.clone(), vec![Box::new(|| {
-        println!("Hello, world!");
-    })]) {
-        Ok(_) => {},
-        Err(e) => {
-            println!("{}", e);
-            return;
-        },
-    }
+    let ctx = with_value(ctx, "id", 123i32);
+    let ctx = with_value(ctx, "name", "Alice".to_string());
+    let (ctx, cancel) = with_cancel(ctx);
+    let (ctx, _) = after_func(ctx, || {
+        println!("This function will be executed after a delay.");
+    });
 
-    cancel_ctx(ctx.clone());
+    // Cancel the context
+    cancel();
 
-    tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+    let id = match ctx.value::<i32>("id") {
+        None => 0,
+        Some(a) => *a
+    };
+    let name = match ctx.value::<String>("name") {
+        None => "".to_string(),
+        Some(a) => a.to_string()
+    };
+
+    println!("id: {} name: {}", id, name)
+
+    // tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
 }
