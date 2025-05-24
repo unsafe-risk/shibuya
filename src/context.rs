@@ -404,12 +404,13 @@ pub fn with_timeout<C: Context + 'static>(
 /// The returned context's Done channel is closed when the function returns,
 /// when the returned cancel function is called, or when the parent context's Done
 /// channel is closed, whichever happens first.
-pub fn after_func<C: Context + 'static, F>(
+pub fn after_func<C: Context + 'static, F, Fut>(
     parent: C,
     f: F,
 ) -> (impl Context, CancelFunc)
 where
-    F: FnOnce() + Send + 'static,
+    F: FnOnce() -> Fut + Send + 'static,
+    Fut: std::future::Future<Output = ()> + Send + 'static,
 {
     let (ctx, cancel) = with_cancel(parent);
 
@@ -420,8 +421,8 @@ where
 
     // Spawn a task to execute the function
     let handle = tokio::spawn(async move {
-        // Execute the function
-        f();
+        // Execute the function and await its completion
+        f().await;
 
         // After function completes, cancel the context
         let mut should_notify = false;
@@ -623,7 +624,7 @@ mod tests {
             let flag_clone = flag.clone();
 
             // Create a context that will be canceled after the function completes
-            let (ctx, _) = after_func(ctx, move || {
+            let (ctx, _) = after_func(ctx, move || async move {
                 // Set the flag to true to indicate the function was called
                 let mut flag = flag_clone.lock().unwrap();
                 *flag = true;
