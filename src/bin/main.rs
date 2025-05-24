@@ -6,7 +6,8 @@ async fn main() {
     let ctx = with_value(ctx, "id", 123i32);
     let ctx = with_value(ctx, "name", "Alice".to_string());
     let (ctx, cancel) = with_cancel(ctx);
-    let (ctx, _) = after_func(ctx, || {
+    let (ctx, _) = after_func(ctx, || async {
+        tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
         println!("This function will be executed after a delay.");
     });
 
@@ -22,7 +23,11 @@ async fn main() {
         Some(a) => a.to_string()
     };
 
-    println!("id: {} name: {}", id, name)
+    println!("id: {} name: {}", id, name);
 
-    // tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+    // Cancel the context after using it
+    cancel();
+
+    // Wait to allow the after_func to execute
+    tokio::time::sleep(tokio::time::Duration::from_secs(6)).await;
 }
